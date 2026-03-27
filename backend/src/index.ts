@@ -1,13 +1,16 @@
 import express from 'express'
+import dotenv from 'dotenv'
+dotenv.config();
 import { userRouter } from './routes/userRouter'
 import { linkRouter } from './routes/linkRouter';
 
 const app = express()
+
+app.use(express.json());
 
 app.use('/api/user', userRouter);
 app.use('/api/link', linkRouter)
 
 app.listen(8080, ()=>{
     console.log("starting server at 8080");
-    
 })

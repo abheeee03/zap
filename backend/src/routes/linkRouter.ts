@@ -2,7 +2,10 @@ import { Router } from "express";
 
 export const linkRouter = Router()
 
-linkRouter.get('/', (req, res)=>{})
-linkRouter.post('/create', (req, res)=>{})
-linkRouter.post('/update', (req, res)=>{})
-linkRouter.delete('/', (req, res)=>{})
+linkRouter.get('/', async (req, res) => {})
+
+linkRouter.post('/create', async (req, res) => {})
+
+linkRouter.post('/update',  async (req, res) => {})
+
+linkRouter.delete('/', async (req, res) => {})
