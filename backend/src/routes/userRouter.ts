@@ -6,6 +6,8 @@ import { authMiddleware } from "../middleware/auth";
 
 export const userRouter = Router()
 
+const JWT_SECRET = process.env.JWT_SECRET || "";
+
 userRouter.post('/signup', async (req, res) => {
 	try {
 		const { email, password } = req.body as { email?: string; password?: string };
@@ -15,7 +17,9 @@ userRouter.post('/signup', async (req, res) => {
 			return;
 		}
 
-		const existingUser = await prisma.user.findUnique({ where: { email } });
+		const normalizedEmail = email.trim().toLowerCase();
+
+		const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 		if (existingUser) {
 			res.status(409).json({ message: "User already exists" });
 			return;
@@ -25,14 +29,14 @@ userRouter.post('/signup', async (req, res) => {
 
 		const user = await prisma.user.create({
 			data: {
-				email,
+				email: normalizedEmail,
 				password: hashedPassword,
 			},
 		});
 
 		const token = jwt.sign(
 			{ userId: user.id },
-			process.env.JWT_SECRET || "dev_secret_change_me",
+			JWT_SECRET,
 			{ expiresIn: "7d" }
 		);
 
@@ -55,7 +59,9 @@ userRouter.post('/login', async (req, res) => {
 			return;
 		}
 
-		const user = await prisma.user.findUnique({ where: { email } });
+		const normalizedEmail = email.trim().toLowerCase();
+
+		const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 		if (!user) {
 			res.status(401).json({ message: "Invalid credentials" });
 			return;
@@ -69,7 +75,7 @@ userRouter.post('/login', async (req, res) => {
 
 		const token = jwt.sign(
 			{ userId: user.id },
-			process.env.JWT_SECRET || "dev_secret_change_me",
+			JWT_SECRET,
 			{ expiresIn: "7d" }
 		);
 
@@ -96,15 +102,13 @@ userRouter.get('/', authMiddleware, async (req, res) => {
 			select: {
 				id: true,
 				email: true,
-				links: {
+				link: {
 					select: {
 						id: true,
-						originalUrl: true,
-						shortCode: true,
-						createdAt: true,
-						updatedAt: true,
+						title: true,
+						url: true,
 					},
-					orderBy: { createdAt: "desc" },
+					orderBy: { id: "desc" },
 				},
 			},
 		});
