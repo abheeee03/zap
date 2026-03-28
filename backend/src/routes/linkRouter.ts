@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { authMiddleware } from "../middleware/auth";
@@ -12,6 +13,14 @@ const isValidUrl = (value: string): boolean => {
 		return false;
 	}
 };
+
+const getRandomCode = () => {
+  var random = Math.floor(Math.random() * 999999) + '';
+  var md5crypto = crypto.createHash('md5').update(random).digest("hex");
+  //generates 5 letter / digit code
+  var short_code = md5crypto.substring(0, 5);
+  return short_code;
+}
 
 linkRouter.get('/', authMiddleware, async (req, res) => {
 	try {
@@ -40,7 +49,7 @@ linkRouter.post('/create', authMiddleware, async (req, res) => {
 			return;
 		}
 
-		const { title, url } = req.body as { title?: string; url?: string };
+		const { title, url, slug } = req.body as { title?: string; url?: string, slug?: string };
 
 		if (!title || !url) {
 			res.status(400).json({ message: "title and url are required" });
@@ -51,10 +60,15 @@ linkRouter.post('/create', authMiddleware, async (req, res) => {
 			res.status(400).json({ message: "Invalid url" });
 			return;
 		}
+		let random_slug;
+		if(!slug) {
+			random_slug = getRandomCode();
+		}
 
 		const link = await prisma.links.create({
 			data: {
 				title: title.trim(),
+				slug: slug ? slug : random_slug,
 				url: url.trim(),
 				userID: userId,
 			},

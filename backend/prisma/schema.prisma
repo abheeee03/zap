@@ -14,16 +14,17 @@ datasource db {
 }
 
 model User {
-  id  String @id @default(uuid())
-  email String @unique
-  password  String
-  link    Links[]
+  id       String  @id @default(uuid())
+  email    String  @unique
+  password String
+  link     Links[]
 }
 
 model Links {
-  id  String @id @default(uuid())
-  title String
-  url   String
-  userID  String
-  user   User @relation(fields: [userID], references: [id])
+  id     String @id @default(uuid())
+  title  String
+  slug   String?
+  url    String
+  userID String
+  user   User   @relation(fields: [userID], references: [id])
 }
