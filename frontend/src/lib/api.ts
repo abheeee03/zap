@@ -5,6 +5,12 @@ export type AuthUser = {
   email: string;
 };
 
+export type UserLink = {
+  id: string;
+  title: string;
+  url: string;
+};
+
 type AuthResponse = {
   token: string;
   user: AuthUser;
@@ -12,11 +18,16 @@ type AuthResponse = {
 };
 
 type CurrentUserResponse = AuthUser & {
-  link: Array<{
-    id: string;
-    title: string;
-    url: string;
-  }>;
+  link: UserLink[];
+};
+
+type CreateLinkResponse = {
+  message: string;
+  link: UserLink;
+};
+
+type GetLinksResponse = {
+  links: UserLink[];
 };
 
 export const TOKEN_STORAGE_KEY = "zap_token";
@@ -60,6 +71,20 @@ export const signupRequest = async (email: string, password: string): Promise<Au
 
 export const getCurrentUserRequest = async (): Promise<CurrentUserResponse> => {
   const response = await api.get<CurrentUserResponse>("/user");
+  return response.data;
+};
+
+export const createLinkRequest = async (url: string): Promise<CreateLinkResponse> => {
+  const cleanedUrl = url.trim();
+  const response = await api.post<CreateLinkResponse>("/link/create", {
+    title: cleanedUrl,
+    url: cleanedUrl,
+  });
+  return response.data;
+};
+
+export const getLinksRequest = async (): Promise<GetLinksResponse> => {
+  const response = await api.get<GetLinksResponse>("/link");
   return response.data;
 };
 
