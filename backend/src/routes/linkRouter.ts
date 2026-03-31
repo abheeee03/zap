@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import { Router } from "express";
-import { prisma } from "../lib/prisma";
+import { Types } from "mongoose";
 import { authMiddleware } from "../middleware/auth";
+import { Link } from "../models/Link";
 
 export const linkRouter = Router()
 
@@ -24,35 +25,45 @@ const normalizeSlug = (value: string) => value.trim().toLowerCase();
 
 const isValidSlug = (value: string) => /^[a-z0-9-]+$/.test(value);
 
-const isPrismaUniqueSlugError = (error: unknown): boolean => {
+const isMongoUniqueSlugError = (error: unknown): boolean => {
 	if (!error || typeof error !== "object" || !("code" in error)) {
 		return false;
 	}
 
-	const code = (error as { code?: string }).code;
-	if (code !== "P2002") {
+	const code = (error as { code?: number }).code;
+	if (code !== 11000) {
 		return false;
 	}
 
-	const target = (error as { meta?: { target?: unknown } }).meta?.target;
-	if (Array.isArray(target)) {
-		return target.includes("slug");
-	}
-
-	return true;
+	const keyPattern = (error as { keyPattern?: Record<string, unknown> }).keyPattern;
+	return Boolean(keyPattern?.slug);
 };
 
 const generateUniqueSlug = async (): Promise<string> => {
 	let slug = getRandomCode();
-	let existing = await prisma.links.findFirst({ where: { slug } });
+	let existing = await Link.exists({ slug });
 
 	while (existing) {
 		slug = getRandomCode();
-		existing = await prisma.links.findFirst({ where: { slug } });
+		existing = await Link.exists({ slug });
 	}
 
 	return slug;
 };
+
+const toLinkResponse = (link: {
+	_id: Types.ObjectId;
+	title: string;
+	slug: string;
+	url: string;
+	clicks: number;
+}) => ({
+	id: link._id.toString(),
+	title: link.title,
+	slug: link.slug,
+	url: link.url,
+	clicks: link.clicks,
+});
 
 linkRouter.get('/resolve/:slug', async (req, res) => {
 	try {
@@ -63,14 +74,18 @@ linkRouter.get('/resolve/:slug', async (req, res) => {
 		}
 
 		const slug = normalizeSlug(rawSlug);
-		const link = await prisma.links.findFirst({ where: { slug } });
+		const link = await Link.findOneAndUpdate(
+			{ slug },
+			{ $inc: { clicks: 1 } },
+			{ new: true }
+		);
 
 		if (!link) {
 			res.status(404).json({ message: "Link not found" });
 			return;
 		}
 
-		res.json({ slug: link.slug, url: link.url });
+		res.json({ slug: link.slug, url: link.url, clicks: link.clicks });
 	} catch {
 		res.status(500).json({ message: "Failed to resolve link" });
 	}
@@ -84,26 +99,14 @@ linkRouter.get('/', authMiddleware, async (req, res) => {
 			return;
 		}
 
-		const rawLinks = await prisma.links.findMany({
-			where: { userID: userId },
-			orderBy: { id: "desc" },
-		});
+		if (!Types.ObjectId.isValid(userId)) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
 
-		const links = await Promise.all(
-			rawLinks.map(async (link) => {
-				if (link.slug) {
-					return link;
-				}
+		const links = await Link.find({ userId }).sort({ createdAt: -1 });
 
-				const generatedSlug = await generateUniqueSlug();
-				return prisma.links.update({
-					where: { id: link.id },
-					data: { slug: generatedSlug },
-				});
-			})
-		);
-
-		res.json({ links });
+		res.json({ links: links.map((link) => toLinkResponse(link)) });
 	} catch {
 		res.status(500).json({ message: "Failed to fetch links" });
 	}
@@ -113,6 +116,11 @@ linkRouter.post('/create', authMiddleware, async (req, res) => {
 	try {
 		const userId = req.userId;
 		if (!userId) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
+
+		if (!Types.ObjectId.isValid(userId)) {
 			res.status(401).json({ message: "Unauthorized" });
 			return;
 		}
@@ -136,7 +144,7 @@ linkRouter.post('/create', authMiddleware, async (req, res) => {
 				return;
 			}
 
-			const existingSlug = await prisma.links.findFirst({ where: { slug: finalSlug } });
+			const existingSlug = await Link.findOne({ slug: finalSlug });
 			if (existingSlug) {
 				res.status(409).json({ message: "Slug already exists" });
 				return;
@@ -145,18 +153,17 @@ linkRouter.post('/create', authMiddleware, async (req, res) => {
 			finalSlug = await generateUniqueSlug();
 		}
 
-		const link = await prisma.links.create({
-			data: {
-				title: title.trim(),
-				slug: finalSlug,
-				url: url.trim(),
-				userID: userId,
-			},
+		const link = await Link.create({
+			title: title.trim(),
+			slug: finalSlug,
+			url: url.trim(),
+			userId,
+			clicks: 0,
 		});
 
-		res.status(201).json({ message: "Link created", link });
+		res.status(201).json({ message: "Link created", link: toLinkResponse(link) });
 	} catch (error) {
-		if (isPrismaUniqueSlugError(error)) {
+		if (isMongoUniqueSlugError(error)) {
 			res.status(409).json({ message: "Slug already exists" });
 			return;
 		}
@@ -169,6 +176,11 @@ linkRouter.post('/update', authMiddleware, async (req, res) => {
 	try {
 		const userId = req.userId;
 		if (!userId) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
+
+		if (!Types.ObjectId.isValid(userId)) {
 			res.status(401).json({ message: "Unauthorized" });
 			return;
 		}
@@ -203,18 +215,23 @@ linkRouter.post('/update', authMiddleware, async (req, res) => {
 			return;
 		}
 
-		const updated = await prisma.links.updateMany({
-			where: { slug: normalizedSlug, userID: userId },
-			data,
-		});
+		const updated = await Link.updateOne(
+			{ slug: normalizedSlug, userId },
+			data
+		);
 
-		if (updated.count === 0) {
+		if (updated.matchedCount === 0) {
 			res.status(404).json({ message: "Link not found" });
 			return;
 		}
 
-		const link = await prisma.links.findFirst({ where: { slug: normalizedSlug, userID: userId } });
-		res.json({ message: "Link updated", link });
+		const link = await Link.findOne({ slug: normalizedSlug, userId });
+		if (!link) {
+			res.status(404).json({ message: "Link not found" });
+			return;
+		}
+
+		res.json({ message: "Link updated", link: toLinkResponse(link) });
 	} catch {
 		res.status(500).json({ message: "Failed to update link" });
 	}
@@ -224,6 +241,11 @@ linkRouter.delete('/', authMiddleware, async (req, res) => {
 	try {
 		const userId = req.userId;
 		if (!userId) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
+
+		if (!Types.ObjectId.isValid(userId)) {
 			res.status(401).json({ message: "Unauthorized" });
 			return;
 		}
@@ -240,11 +262,9 @@ linkRouter.delete('/', authMiddleware, async (req, res) => {
 			return;
 		}
 
-		const deleted = await prisma.links.deleteMany({
-			where: { slug: normalizedSlug, userID: userId },
-		});
+		const deleted = await Link.deleteOne({ slug: normalizedSlug, userId });
 
-		if (deleted.count === 0) {
+		if (deleted.deletedCount === 0) {
 			res.status(404).json({ message: "Link not found" });
 			return;
 		}

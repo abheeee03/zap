@@ -1,8 +1,10 @@
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { prisma } from "../lib/prisma";
+import { Types } from "mongoose";
 import { authMiddleware } from "../middleware/auth";
+import { User } from "../models/User";
+import { Link } from "../models/Link";
 
 export const userRouter = Router()
 
@@ -19,7 +21,7 @@ userRouter.post('/signup', async (req, res) => {
 
 		const normalizedEmail = email.trim().toLowerCase();
 
-		const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+		const existingUser = await User.findOne({ email: normalizedEmail });
 		if (existingUser) {
 			res.status(409).json({ message: "User already exists" });
 			return;
@@ -27,15 +29,13 @@ userRouter.post('/signup', async (req, res) => {
 
 		const hashedPassword = await bcrypt.hash(password, 10);
 
-		const user = await prisma.user.create({
-			data: {
-				email: normalizedEmail,
-				password: hashedPassword,
-			},
+		const user = await User.create({
+			email: normalizedEmail,
+			password: hashedPassword,
 		});
 
 		const token = jwt.sign(
-			{ userId: user.id },
+			{ userId: user._id.toString() },
 			JWT_SECRET,
 			{ expiresIn: "7d" }
 		);
@@ -43,7 +43,7 @@ userRouter.post('/signup', async (req, res) => {
 		res.status(201).json({
 			message: "User created",
 			token,
-			user: { id: user.id, email: user.email },
+			user: { id: user._id.toString(), email: user.email },
 		});
 	} catch {
 		res.status(500).json({ message: "Failed to signup" });
@@ -61,7 +61,7 @@ userRouter.post('/login', async (req, res) => {
 
 		const normalizedEmail = email.trim().toLowerCase();
 
-		const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+		const user = await User.findOne({ email: normalizedEmail });
 		if (!user) {
 			res.status(401).json({ message: "Invalid credentials" });
 			return;
@@ -74,7 +74,7 @@ userRouter.post('/login', async (req, res) => {
 		}
 
 		const token = jwt.sign(
-			{ userId: user.id },
+			{ userId: user._id.toString() },
 			JWT_SECRET,
 			{ expiresIn: "7d" }
 		);
@@ -82,7 +82,7 @@ userRouter.post('/login', async (req, res) => {
 		res.json({
 			message: "Login successful",
 			token,
-			user: { id: user.id, email: user.email },
+			user: { id: user._id.toString(), email: user.email },
 		});
 	} catch {
 		res.status(500).json({ message: "Failed to login" });
@@ -97,28 +97,31 @@ userRouter.get('/', authMiddleware, async (req, res) => {
 			return;
 		}
 
-		const user = await prisma.user.findUnique({
-			where: { id: userId },
-			select: {
-				id: true,
-				email: true,
-				link: {
-					select: {
-						id: true,
-						title: true,
-						url: true,
-					},
-					orderBy: { id: "desc" },
-				},
-			},
-		});
+		if (!Types.ObjectId.isValid(userId)) {
+			res.status(401).json({ message: "Unauthorized" });
+			return;
+		}
+
+		const user = await User.findById(userId);
 
 		if (!user) {
 			res.status(404).json({ message: "User not found" });
 			return;
 		}
 
-		res.json(user);
+		const links = await Link.find({ userId }).sort({ createdAt: -1 });
+
+		res.json({
+			id: user._id.toString(),
+			email: user.email,
+			link: links.map((link) => ({
+				id: link._id.toString(),
+				title: link.title,
+				slug: link.slug,
+				url: link.url,
+				clicks: link.clicks,
+			})),
+		});
 	} catch {
 		res.status(500).json({ message: "Failed to fetch user" });
 	}
