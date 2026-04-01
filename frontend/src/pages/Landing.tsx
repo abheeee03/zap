@@ -3,6 +3,7 @@ import { AuthDialog } from '@/components/auth'
 import { useAuth } from '@/lib/auth-context'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import LandingNav from '@/components/nav'
 
 function Landing() {
   const { isAuthenticated } = useAuth()
@@ -14,11 +15,12 @@ function Landing() {
       navigate('/home')
       return
     }
-
     setOpenAuth(true)
   }
 
   return (
+    <>
+    <LandingNav/>
     <div className="h-screen w-full flex flex-col gap-5 items-center justify-center">
       <span className='px-3 border rounded-xl'>Introducing zapp</span>
       <h1 className='text-6xl font-semibold text-center mb-5'>Make your links look smart.</h1>
@@ -42,6 +44,7 @@ function Landing() {
         onSuccess={() => navigate('/home')}
       />
     </div>
+    </>
   )
 }
 
