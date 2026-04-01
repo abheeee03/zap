@@ -1,5 +1,4 @@
 import { cn } from '@/lib/utils'
-import React from 'react'
 
 function Logo({size = "sm"}: {size?: "sm" | "lg"}) {
   return (
